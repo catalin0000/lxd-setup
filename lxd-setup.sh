@@ -11,25 +11,29 @@ set -euo pipefail
 
 sudo pacman -Syu --noconfirm
 
-pkg="lxd"
+echo "[*] For now use this only after you installed lxd!"
 
-echo "[*] Checking for conflicts..."
+# pkg="lxd"
+# 
+# echo "[*] Checking for conflicts..."
+# 
+# if ! sudo pacman -S --noconfirm --needed --print-format "%n" "$pkg" >/dev/null 2>&1; then
+#     echo "[!] Conflicts detected. Trying safe removal of conflicting packages..."
+#     # Identify the conflicting packages
+#     conflicts=$(sudo pacman -S --print-format "%n" "$pkg" 2>&1 | grep "conflicts with" | awk '{print $NF}')
+#     if [[ -n "$conflicts" ]]; then
+#         echo "[*] Removing conflicts: $conflicts"
+#         sudo pacman -Rns --noconfirm $conflicts
+#     fi
+# fi
+# 
+# echo "[*] Installing $pkg..."
+# 
+# sudo pacman -S --noconfirm --needed "$pkg" lvm2
 
-if ! sudo pacman -S --noconfirm --needed --print-format "%n" "$pkg" >/dev/null 2>&1; then
-    echo "[!] Conflicts detected. Trying safe removal of conflicting packages..."
-    # Identify the conflicting packages
-    conflicts=$(sudo pacman -S --print-format "%n" "$pkg" 2>&1 | grep "conflicts with" | awk '{print $NF}')
-    if [[ -n "$conflicts" ]]; then
-        echo "[*] Removing conflicts: $conflicts"
-        sudo pacman -Rns --noconfirm $conflicts
-    fi
-fi
+sudo systemctl enable --now lxd
 
-echo "[*] Installing $pkg..."
-
-sudo pacman -S --noconfirm --needed "$pkg" lvm2
-
-
+sudo pacman -S --noconfirm --needed lvm2
 sudo mkdir -p $lvmpool
 sudo truncate -s $lvmimgsize $lvmimg
 
