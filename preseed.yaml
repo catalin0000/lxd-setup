@@ -7,7 +7,11 @@ networks:
   name: lxdbr0
   type: ""
   project: default
-storage_pools: []
+storage_pools:
+- config: {}
+  description: ""
+  name: default
+  driver: dir
 storage_volumes: []
 profiles:
 - config: {}
@@ -17,6 +21,10 @@ profiles:
       name: eth0
       network: lxdbr0
       type: nic
+    root:
+      path: /
+      pool: default
+      type: disk
   name: default
 projects: []
 cluster: null

@@ -63,13 +63,16 @@ echo "[*] LVM thin pool setup complete:"
 sudo lvs
 
 # create lxd storage inside the lvm
-echo "[*] LXD Storage creation..."
+echo "[*] LXD LVM Storage creation..."
 sudo lxc storage create mylvm lvm source="$vgname" lvm.thinpool_name="$thinpoolname"
 
-echo "[*] LXD Storage created:"
+echo "[*] LXD LVM Storage created:"
 sudo lxc storage list
 
+# sudo lxc profile device add default root disk path=/ pool=mylvm
 sudo lxc profile device set default root pool=mylvm
+sudo lxc storage delete default
+
 
 echo "[*] LXD X11 forwarding profile creation..."
 sudo lxc profile create x11-profile
