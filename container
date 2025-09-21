@@ -1,0 +1,236 @@
+#!/bin/bash
+# simple 'wrapper'
+golden='kali-golden'
+
+usage() {
+    cat << EOF
+Usage: $0 COMMAND [ARGUMENTS]
+
+LXC Container Management Script
+
+Commands:
+  new <name>        Create a new container with the specified name(basically making a copy of the golden-image container)
+  attach <name>    Connect to a running container - if its not running it will also start it
+  list              List all available containers
+  stop				Stop specific container
+  stopall           Stop all running containers
+  deleteall         Delete all containers. No matter they run or not. !!! THIS DO NOT REMOVE STORED PROJECT DATA.
+  delete <name>     Delete a container
+  cleanup			Clean old containers. Destroy containers older then 30 days and remove all data.
+  recreategolden	In case the golden image needs to be recreated. - to be added in the future
+  help              Show this help message
+
+Variables used:
+
+main_dir='/work'	- where project directories will be created. they will be mounted to the container and also store logs and whatever project data
+lxc_path='/var/lib/lxc'	- where lxc is storing the containers
+
+Examples:
+  $0 new project23
+  $0 start project23
+  $0 attach project23
+  $0 list
+  $0 stopall
+
+EOF
+    exit 1
+}
+
+
+if [ $# -lt 1 ]; then
+    usage
+fi
+
+main_dir='/work'
+lxd_path='/var/lib/lxd'
+
+case "$1" in
+    new)
+        if [ -z "$2" ]; then
+            echo "You must supply a new container name."
+            exit 1
+        fi
+
+        if [ ! -d "$main_dir" ]; then
+        	sudo mkdir -p "$main_dir"
+        fi
+        
+        NEWNAME="$2"
+        echo "[*] Copying $golden to $NEWNAME..."
+        sudo lxc launch "$golden" --profile default --profile x11-profile "$NEWNAME"
+
+		proj_dir="$main_dir/$2"
+		
+		# create local host project directory
+		sudo mkdir -p $proj_dir
+		sudo chown 100000:100000 $proj_dir
+
+		# mount host project dir into the container
+		sudo lxc config device add "$NEWNAME" projectdisk disk source="$proj_dir" path="/root/$NEWNAME"
+
+		# change bash logging
+		sudo lxc exec "$NEWNAME" -- bash -c "tee -a /root/.bashrc > /dev/null"  <<EOF
+# Custom history logging for container $CONTAINER
+export HISTFILE="/root/$NEWNAME/bash_history"
+export HISTTIMEFORMAT="%F %T "
+LOGFILE="/root/$NEWNAME/bash_history_human_friendly"
+PROMPT_COMMAND='history -a; history -n; last_cmd=\$(history 1); echo "\$(date "+%F %T") \${last_cmd#* }" >> "\$LOGFILE"'
+shopt -s histappend
+HISTCONTROL=
+EOF
+
+		echo "[*] Bash history logging added to $proj_dir/bash_history and $proj_dir/bash_history_human_friendly"
+
+		echo "$(date) - container created." | sudo tee -a "$proj_dir/time.log"
+		echo "[*] Attaching to $CONTAINER..."
+
+		sudo lxc exec "$NEWNAME" -- touch /root/.Xauthority
+		sudo lxc exec "$NEWNAME" -- xauth add :0 . $(xauth list | awk '{print $3}' | tail -1)
+		sudo lxc exec "$NEWNAME" -- bash
+		
+		;;
+	list)
+		echo "[*] Listing containers..."
+		sudo lxc list --fast
+		;;
+	attach)
+		if [ -z "$2" ]; then
+            echo "You must supply a container name."
+            exit 1
+        fi
+        CONTAINER="$2"
+
+		# check state
+		STATE=$(sudo lxc info "$CONTAINER" | awk '/Status:/ {print $2}')
+		if [ "$STATE" == "STOPPED" ]; then
+	        echo "[*] Container $CONTAINER is not running. Starting..."
+	        sudo lxc start "$CONTAINER"
+	        sleep 2
+    	fi
+        proj_dir="$main_dir/$CONTAINER"
+        echo "$(date) - Attached to container." | sudo tee -a "$proj_dir/time.log"
+        echo "[*] Attaching to $CONTAINER..."
+        sudo lxc exec "$NEWNAME" -- xauth add :0 . $(xauth list | awk '{print $3}' | tail -1)
+        sudo lxc exec "$CONTAINER" -- bash
+        ;;
+    stopall)
+    	RUNNING=$(sudo lxc list --format csv -c n,s | awk -F, '$2=="RUNNING" {print $1}')
+    	if [ -z "$RUNNING" ]; then
+	        echo "[*] No running containers."
+	        exit 0
+    	fi
+
+		echo "[*] Stopping all running containers:"
+	    for c in $RUNNING; do
+	        echo "  - Stopping $c"
+	        sudo lxc stop "$c"
+	    done
+
+	    echo "[*] All running containers stopped."
+		;;
+
+	stop)
+		if [ -z "$2" ]; then
+            echo "You must supply a new container name."
+            exit 1
+        fi
+
+		STATE=$(sudo lxc info "$2" | awk '/Status:/ {print $2}')
+		
+		if [ "$STATE" == "RUNNING" ]; then
+			echo "[*] Stopping container $CONTAINER..."
+			sudo lxc stop "$2"
+			sleep 2
+		fi
+		
+		;;
+	cleanup)
+		echo "[*] Checking all containers for inactivity..."
+	    NOW=$(date +%s)
+	    THREE_MONTHS=$((90*24*60*60))  # 90 days in seconds
+
+		for DIR in "$main_dir"/*; do
+	        CONTAINER=$(basename "$DIR")
+	        TIMELOG="$DIR/time.log"
+
+	        if [ ! -f "$TIMELOG" ]; then
+	            echo "  - No time.log for $CONTAINER, skipping."
+	            continue
+	        fi
+
+	        # Get last line
+	        LASTLINE=$(tail -n 1 "$TIMELOG")
+	        # Extract timestamp (everything before the dash)
+	        TIMESTAMP=$(echo "$LASTLINE" | awk -F' - ' '{print $1}')
+
+	        # Convert to epoch
+	        LASTUSED=$(date -d "$TIMESTAMP" +%s 2>/dev/null)
+	        if [ -z "$LASTUSED" ]; then
+	            echo "  - Could not parse date for $CONTAINER, skipping."
+	            continue
+	        fi
+
+	        # Compare
+	        AGE=$((NOW - LASTUSED))
+	        if [ $AGE -gt $THREE_MONTHS ]; then
+	            echo "  - Container $CONTAINER last used $((AGE/86400)) days ago. Destroying..."
+
+	            STATE=$(sudo lxc info "$CONTAINER" | awk '/Status:/ {print $2}')
+	            if [ "$STATE" = "RUNNING" ]; then
+	                echo "[*] Container $CONTAINER is running. Stopping..."
+	                sudo lxc stop "$CONTAINER"
+	                sleep 2
+	            fi
+
+	            sudo lxc delete "$CONTAINER"
+	            # completely remove project dir
+	            sudo rm -rf "$DIR"
+	        else
+	            echo "  - Container $CONTAINER is recent, skipping."
+	        fi
+	    done
+
+	    echo "[*] Cleanup finished."
+	    ;;
+	deleteall)
+	    # Stop all running containers
+	    RUNNING=$(sudo lxc list --format csv -c n,s | awk -F, '$2=="RUNNING" {print $1}')
+	    if [ -n "$RUNNING" ]; then
+	        echo "[*] Stopping all running containers:"
+	        for c in $RUNNING; do
+	            echo "  - Stopping $c"
+	            sudo lxc stop "$c"
+	        done
+	    fi
+
+	    # Remove all containers except golden-image
+	    all_cont=$(sudo lxc list --format csv -c n | grep -v "^kali-golden$")
+	    echo "[*] Removing all containers."
+	    for c in $all_cont; do
+	        echo "  - Removing $c"
+	        sudo lxc delete "$c"
+	    done
+
+	    echo "[*] All containers removed."
+	    ;;
+	delete)
+	    if [ -z "$2" ]; then
+	        echo "You must supply a container name."
+	        exit 1
+	    fi
+	    CONTAINER="$2"
+
+	    STATE=$(sudo lxc info "$CONTAINER" | awk '/Status:/ {print $2}')
+	    if [ "$STATE" = "RUNNING" ]; then
+	        echo "[*] Container $CONTAINER is running. Stopping..."
+	        sudo lxc stop "$CONTAINER"
+	        sleep 2
+	    fi
+
+	    sudo lxc delete "$CONTAINER"
+	    ;;
+		
+    *)
+        usage
+        ;;
+esac
