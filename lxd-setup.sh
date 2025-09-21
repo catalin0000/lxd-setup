@@ -69,6 +69,8 @@ sudo lxc storage create mylvm lvm source="$vgname" lvm.thinpool_name="$thinpooln
 echo "[*] LXD Storage created:"
 sudo lxc storage list
 
+sudo lxc profile device add default root disk path=/ pool=mylvm
+
 echo "[*] LXD X11 forwarding profile creation..."
 sudo lxc profile create x11-profile
 sudo lxc profile device add x11-profile X0 proxy connect=unix:/tmp/.X11-unix/X0 listen=unix:/tmp/.X11-unix/X0 bind=container
