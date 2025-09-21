@@ -34,7 +34,11 @@ echo "[*] For now use this only after you installed lxd!"
 sudo systemctl enable --now lxd
 
 # init lxd - it will not create storage yet
-sudo lxd init --pressed < preseed.yaml
+sudo lxd init --preseed < preseed.yaml
+
+# user is already added usually so we only need to add root
+echo 'root:100000:65536' | sudo tee -a /etc/subuid
+echo 'root:100000:65536' | sudo tee -a /etc/subgid
 
 # installing lvm and configuring it for lxd
 sudo pacman -S --noconfirm --needed lvm2
@@ -75,4 +79,12 @@ echo "[*] LXD X11 fowarding profile created:"
 sudo lxc profile show x11-profile
 
 
+sudo lxc launch images:kali kali-golden
 
+sudo lxc publish kali-golden --alias kali-golden
+
+sudo cp container /usr/local/bin/container
+sudo chmod +x /usr/local/bin/container
+
+echo "Setup complete!"
+echo "You can now use the 'container' wrapper for conveniance. Just type container."
