@@ -37,8 +37,8 @@ sudo systemctl enable --now lxd
 sudo lxd init --preseed < preseed.yaml
 
 # user is already added usually so we only need to add root
-echo 'root:100000:65536' | sudo tee -a /etc/subuid
-echo 'root:100000:65536' | sudo tee -a /etc/subgid
+echo 'root:1000000:1000999999' | sudo tee -a /etc/subuid
+echo 'root:1000000:1000999999' | sudo tee -a /etc/subgid
 
 # installing lvm and configuring it for lxd
 sudo pacman -S --noconfirm --needed lvm2
@@ -73,7 +73,6 @@ sudo lxc storage list
 sudo lxc profile device set default root pool=mylvm
 sudo lxc storage delete default
 
-
 echo "[*] LXD X11 forwarding profile creation..."
 sudo lxc profile create x11-profile
 sudo lxc profile device add x11-profile X0 proxy connect=unix:/tmp/.X11-unix/X0 listen=unix:/tmp/.X11-unix/X0 bind=container
@@ -83,8 +82,9 @@ sudo lxc profile set x11-profile environment.XAUTHORITY /root/.Xauthority
 echo "[*] LXD X11 fowarding profile created:"
 sudo lxc profile show x11-profile
 
-
 sudo lxc launch images:kali kali-golden
+
+sudo lxc stop kali-golden
 
 sudo lxc publish kali-golden --alias kali-golden
 
@@ -93,3 +93,4 @@ sudo chmod +x /usr/local/bin/container
 
 echo "Setup complete!"
 echo "You can now use the 'container' wrapper for conveniance. Just type container."
+echo "You can re start the kali-golden container, install whatever tools you want in the golden image and then use the `container updategolden` to 'republish' the image."

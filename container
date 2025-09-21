@@ -63,7 +63,7 @@ case "$1" in
 		
 		# create local host project directory
 		sudo mkdir -p $proj_dir
-		sudo chown 100000:100000 $proj_dir
+		sudo chown 1000000:1000000 $proj_dir
 
 		# mount host project dir into the container
 		sudo lxc config device add "$NEWNAME" projectdisk disk source="$proj_dir" path="/root/$NEWNAME"
