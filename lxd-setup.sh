@@ -9,9 +9,10 @@ thinpoolname="lvm-cont"
 
 set -euo pipefail
 
+echo "[*] For now use this only after you installed lxd!\n\n\n"
+
 sudo pacman -Syu --noconfirm
 
-echo "[*] For now use this only after you installed lxd!"
 
 # pkg="lxd"
 # 
@@ -86,11 +87,11 @@ sudo lxc launch images:kali kali-golden
 
 sudo lxc stop kali-golden
 
-sudo lxc publish kali-golden --alias kali-golden
+sudo lxc publish kali-golden --alias kali-golden --expire=""
 
 sudo cp container /usr/local/bin/container
 sudo chmod +x /usr/local/bin/container
 
 echo "Setup complete!"
 echo "You can now use the 'container' wrapper for conveniance. Just type container."
-echo "You can re start the kali-golden container, install whatever tools you want in the golden image and then use the `container updategolden` to 'republish' the image."
+echo "You can re start the kali-golden container, install whatever tools you want in the golden image and then use the 'container updategolden' to 'republish' the image."

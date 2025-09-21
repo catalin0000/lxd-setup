@@ -2,6 +2,8 @@
 # simple 'wrapper'
 golden='kali-golden'
 
+tools_list="wget jq iputils-ping unzip nuclei netexec python3 python3-venv python3-pip nmap dnsutils bloodyad testssl.sh wireguard-tools chromium ssh-audit"
+
 usage() {
     cat << EOF
 Usage: $0 COMMAND [ARGUMENTS]
@@ -17,6 +19,8 @@ Commands:
   deleteall         Delete all containers. No matter they run or not. !!! THIS DO NOT REMOVE STORED PROJECT DATA.
   delete <name>     Delete a container
   cleanup			Clean old containers. Destroy containers older then 30 days and remove all data.
+  updategolden		This will auto start kali-golden container, apt update it and then re publish it
+  manupdategolden	This will only stop kali-golden in case is running and then re publish it. So that should be used only when you have updated your container manually
   recreategolden	In case the golden image needs to be recreated. - to be added in the future
   help              Show this help message
 
@@ -229,7 +233,94 @@ EOF
 
 	    sudo lxc delete "$CONTAINER"
 	    ;;
-		
+	updategolden)
+		DATE_TAG=$(date +%Y%m%d-%H%M%S)			# date format for alias
+		MAX_IMAGES=4                        # how many dated images to keep
+		if sudo lxc image alias list | grep -qE "^|[[:space:]]${golden}[[:space:]]"; then
+		    echo "Renaming existing alias ${golden} -> ${golden}-${DATE_TAG}"
+		    # Get fingerprint of current alias
+		    # FINGERPRINT=$(sudo lxc image info "${golden}" | awk '/Fingerprint:/ {print $2; exit}')
+		    # Add new alias
+		    sudo lxc image alias rename "${golden}" "${golden}-${DATE_TAG}"
+		    # sudo lxc image alias create "${BASE_ALIAS}-${DATE_TAG}" "${FINGERPRINT}"
+		    # # Remove old alias
+		    # sudo lxc image alias delete "${BASE_ALIAS}" || true
+		fi
+
+		STATE=$(sudo lxc info "$golden" | awk '/Status:/ {print $2}')
+		if [ "$STATE" == "RUNNING" ]; then
+			echo "[*] Container $golden is running. Stopping..."
+	        sudo lxc stop "$golden"
+	        sleep 2
+	    fi
+
+		#  Publish a new image from the container
+		echo "Publishing new ${golden} image from container ${golden}"
+		publish_out=$(sudo lxc publish "${golden}" --alias "${golden}" 2>&1)
+
+		# TMP_FP="$(printf '%s\n' "$publish_out" | grep -oE '[0-9a-f]{64}' | head -n1 || true)"
+		# echo "$TMP_FP"
+
+		if printf '%s' "$publish_out" | grep -q 'The image already exists:'; then
+			echo "The $golden image is already same as the container."
+			echo "Rename the image ${golden}-${DATE_TAG} back to ${golden}"
+			sudo lxc image alias rename "${golden}-${DATE_TAG}" "${golden}"
+		fi
+
+		echo "Pruning old images..."
+		# Get list of images with dated alias sorted oldest first
+		old_aliases=$(sudo lxc image alias list | awk -v base="${golden}-" '$2 ~ "^"base {print $2}' | sort)
+		# Count how many we have
+		count=$(echo "${old_aliases}" | wc -l)
+
+		if (( count > MAX_IMAGES )); then
+		    remove_count=$((count - MAX_IMAGES))
+		    echo "Found $count old images. Removing $remove_count oldest..."
+		    # Get fingerprints for the oldest ones and delete
+		    for alias in $(echo "${old_aliases}" | head -n ${remove_count}); do
+		        fingerprint=$(sudo lxc image info "$alias" | awk '/Fingerprint:/ {print $2; exit}')
+		        echo "Deleting old image alias $alias ($fingerprint)"
+		        lxc image delete "$fingerprint"
+		    done
+		else
+		    echo "No pruning needed. $count old images."
+		fi
+
+		echo "Done."
+		;;	
+	updategoldenauto)
+		STATE=$(sudo lxc info "$golden" | awk '/Status:/ {print $2}')
+		if [ "$STATE" != "RUNNING" ]; then
+			echo "[*] Container $golden is stopped. Starting..."
+	        sudo lxc start "$golden"
+	        sleep 2
+	    fi
+
+		sudo lxc exec $golden -- bash -c 'DEBIAN_FRONTEND=noninteractive apt-get update && apt-get dist-upgrade -y'
+
+		sudo lxc stop $golden
+
+		oldimg="$(sudo lxc image list -q --format=json | jq -r '.[] | select(.aliases[].name == "kali-golden-old2") | .fingerprint')"
+	
+		sudo lxc image alias rename $golden "$(golden)-old"
+		;;
+	buildgolden)
+		STATE=$(sudo lxc info "$golden" | awk '/Status:/ {print $2}')
+		if [ "$STATE" != "RUNNING" ]; then
+			echo "[*] Container $golden is stopped. Starting..."
+	        sudo lxc start "$golden"
+	        sleep 2
+	    fi
+
+		echo "[*] Installing the following tools inside the golden container:\n$tools_list"
+
+		sudo lxc exec $golden -- bash -c "apt-get install -y $tools_list"
+		sudo lxc exec $golden -- bash -c "nuclei -ut"
+		echo "[*] Tools installed."
+		sudo lxc stop "$golden"
+
+		echo "\n[*] You should run updategolden option to update the image."
+	    ;;
     *)
         usage
         ;;
