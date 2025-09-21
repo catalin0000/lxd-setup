@@ -19,8 +19,9 @@ Commands:
   deleteall         Delete all containers. No matter they run or not. !!! THIS DO NOT REMOVE STORED PROJECT DATA.
   delete <name>     Delete a container
   cleanup			Clean old containers. Destroy containers older then 30 days and remove all data.
-  updategolden		This will auto start kali-golden container, apt update it and then re publish it
-  manupdategolden	This will only stop kali-golden in case is running and then re publish it. So that should be used only when you have updated your container manually
+  updategolden		This will basically stop the golden-container is is stopped and re publish. Also maintains a max of 3 images.
+  updategoldenauto	This will only stop kali-golden in case is running and then re publish it. So that should be used only when you have updated your container manually
+  buildgolden		This will install the tools in the tools_list  in the kali-golden
   recreategolden	In case the golden image needs to be recreated. - to be added in the future
   help              Show this help message
 
@@ -235,7 +236,7 @@ EOF
 	    ;;
 	updategolden)
 		DATE_TAG=$(date +%Y%m%d-%H%M%S)			# date format for alias
-		MAX_IMAGES=4                        # how many dated images to keep
+		MAX_IMAGES=2                        # how many dated images to keep
 		if sudo lxc image alias list | grep -qE "^|[[:space:]]${golden}[[:space:]]"; then
 		    echo "Renaming existing alias ${golden} -> ${golden}-${DATE_TAG}"
 		    # Get fingerprint of current alias
