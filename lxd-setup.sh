@@ -11,7 +11,7 @@ set -euo pipefail
 
 echo "[*] For now use this only after you installed lxd!\n\n\n"
 
-sudo pacman -Syu --noconfirm
+# sudo pacman -Syu --noconfirm
 
 
 # pkg="lxd"
@@ -32,6 +32,7 @@ sudo pacman -Syu --noconfirm
 # 
 # sudo pacman -S --noconfirm --needed "$pkg" lvm2
 
+
 sudo systemctl enable --now lxd
 
 # init lxd - it will not create storage yet
@@ -42,13 +43,34 @@ echo 'root:1000000:1000999999' | sudo tee -a /etc/subuid
 echo 'root:1000000:1000999999' | sudo tee -a /etc/subgid
 
 # installing lvm and configuring it for lxd
-sudo pacman -S --noconfirm --needed lvm2
+sudo pacman -Sy --noconfirm --needed lvm2
 sudo mkdir -p $lvmpool
 sudo truncate -s $lvmimgsize $lvmimg
+sudo losetup -fP $lvmimg # this is randomly generating a loop device
 
-sudo losetup -fP $lvmimg
-
+# grab the loop dev
 loop_device=$(sudo losetup -a | awk '{print $1}' | cut -d ':' -f 1 )
+
+# creating the service for mounting the loop dev
+sudo tee /etc/systemd/system/loop-lxd-thin.service > /dev/null <<EOF
+[Unit]
+Description=Setup loop device for LXD thinpool
+DefaultDependencies=no
+Before=local-fs-pre.target
+Wants=local-fs-pre.target
+
+[Service]
+Type=oneshot
+ExecStart=/sbin/losetup $looop_device $lvmimg
+ExecStop=/sbin/losetup -d $loop_device
+RemainAfterExit=yes
+
+[Install]
+WantedBy=local-fs.target
+EOF
+
+sudo systemctl enable loop-lxd-thin
+
 echo "[*] Loop device created: $loop_device"
 
 # Create physical volume
